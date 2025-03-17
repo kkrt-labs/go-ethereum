@@ -24,6 +24,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+
+	// --- Start fork code ---
+	"github.com/ethereum/go-ethereum/trie/trienode"
+	// --- End fork code ---
 )
 
 // HeaderReader is an interface to pull in headers in place of block hashes for
@@ -41,6 +45,10 @@ type Witness struct {
 	Headers []*types.Header     // Past headers in reverse order (0=parent, 1=parent's-parent, etc). First *must* be set.
 	Codes   map[string]struct{} // Set of bytecodes ran or accessed
 	State   map[string]struct{} // Set of MPT state trie nodes (account and storage together)
+
+	// --- Start fork code ---
+	Committed map[string]struct{} // Set of MPT state trie nodes (account and storage together) that have been committed
+	// --- End fork code ---
 
 	chain HeaderReader // Chain reader to convert block hash ops to header proofs
 	lock  sync.Mutex   // Lock to allow concurrent state insertions
@@ -65,6 +73,10 @@ func NewWitness(context *types.Header, chain HeaderReader) (*Witness, error) {
 		Codes:   make(map[string]struct{}),
 		State:   make(map[string]struct{}),
 		chain:   chain,
+
+		// --- Start fork code ---
+		Committed: make(map[string]struct{}),
+		// --- End fork code ---
 	}, nil
 }
 
@@ -97,6 +109,20 @@ func (w *Witness) AddState(nodes map[string]struct{}) {
 
 	maps.Copy(w.State, nodes)
 }
+
+// --- Start fork code ---
+// AddCommitted inserts a batch of MPT trie nodes into the witness.
+func (w *Witness) AddCommitted(nodes *trienode.MergedNodeSet) {
+	for _, set := range nodes.Sets {
+		for _, node := range set.Nodes {
+			if len(node.Blob) > 0 {
+				w.Committed[string(node.Blob)] = struct{}{}
+			}
+		}
+	}
+}
+
+// --- End fork code ---
 
 // Copy deep-copies the witness object.  Witness.Block isn't deep-copied as it
 // is never mutated by Witness
