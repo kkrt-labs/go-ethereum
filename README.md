@@ -1,3 +1,75 @@
+## ZK-PIG : Go Ethereum
+
+This project a [Go-Ethereum](https://github.com/ethereum/go-ethereum) fork used by [zk-pig](https://github.com/kkrt-labs/zk-pig) a ZK-EVM prover input generator.
+
+It is up-to-date with [go-ethereum v1.15.4](https://github.com/ethereum/go-ethereum/releases/tag/v1.15.4).
+
+It adds following minimal changes over base go-ethereum implementation
+
+- [Update MPT trie deletion to not error if the remaining child node cannot be resolved during branch node reduction](https://github.com/kkrt-labs/go-ethereum/commit/55347b5201beffa66c2659419d1d108c3e9c61a8)
+- [Extends MPT Proof Verification while maintaining retro-compatibility](https://github.com/kkrt-labs/go-ethereum/commit/6cca5f4408eb5a1b6b14f2db12527ace02afc34c)
+- [Adds MPT utility functions](https://github.com/kkrt-labs/go-ethereum/commit/99020f5107966471dc183434715face9a7702aed)
+- [Extend witness to track MPT state committed during block execution](https://github.com/kkrt-labs/go-ethereum/commit/d59c1086610c2f80eacf4d73119b399b77ed5086)
+- [Add function to compute MPT differences](https://github.com/kkrt-labs/go-ethereum/commit/c68e6a841a0ff1da409c04482a4457b92c1a305d)
+
+For more details about you can refer to [zk-pig documentation](https://github.com/kkrt-labs/zk-pig/docs/modified-mpt.md)
+
+### Fork Maintenance
+
+The fork is maintained by adding the commits to a new version of go-ethereum
+
+- Ensure that upstream go-ethereum git remote is properly set: 
+
+  ```bash
+  git remote add upstream git@github.com:ethereum/go-ethereum.git
+  ```
+
+- Fetch upstream
+
+  ```bash
+  git fetch upstream
+  ```
+
+- Identify fork commits from latest fork version
+
+  ```bash
+  git checkout <version>
+  git log --oneline > commits.txt
+  ```
+
+- Checkout upstream version of interest and create a new `main-<version>` branch for this version
+
+  ```bash
+  git checkout <upstream-version>
+  git branch -m main-<upstream-version>
+  ```
+
+- Cherry pick all identified commits in the same historical order
+
+  ```bash
+  git cherry-pick <commit>
+  ```
+
+- Update this `README.md` with the new commit hashes and amend the last documentation commit
+
+  ```bash
+  git commit README.md --amend
+  ```
+
+- Tag version
+
+  ```bash
+  git tag -a <version> -m "Version <version>"
+  ````
+
+- Push changes
+
+  ```bash
+  git push --follow-tags
+  ```
+
+- On GitHub update default branch to `main-<version>`
+
 ## Go Ethereum
 
 Golang execution layer implementation of the Ethereum protocol.
