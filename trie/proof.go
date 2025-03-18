@@ -21,9 +21,17 @@ import (
 	"errors"
 	"fmt"
 
+	// --- Start fork code ---
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+
+	// --- End fork code ---
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+
+	// --- Start fork code ---
+	"github.com/ethereum/go-ethereum/trie/trienode"
+	// --- End fork code ---
 )
 
 // Prove constructs a merkle proof for key. The result contains all encoded nodes
@@ -115,30 +123,137 @@ func (t *StateTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) error {
 // key in a trie with the given root hash. VerifyProof returns an error if the
 // proof contains invalid trie nodes or the wrong value.
 func VerifyProof(rootHash common.Hash, key []byte, proofDb ethdb.KeyValueReader) (value []byte, err error) {
-	key = keybytesToHex(key)
-	wantHash := rootHash
-	for i := 0; ; i++ {
-		buf, _ := proofDb.Get(wantHash[:])
+	// --- Start fork code comment---
+	// key = keybytesToHex(key)
+	// wantHash := rootHash
+	// for i := 0; ; i++ {
+	// 	buf, _ := proofDb.Get(wantHash[:])
+	// 	if buf == nil {
+	// 		return nil, fmt.Errorf("proof node %d (hash %064x) missing", i, wantHash)
+	// 	}
+	// 	n, err := decodeNode(wantHash[:], buf)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("bad proof node %d: %v", i, err)
+	// 	}
+	// 	keyrest, cld := get(n, key, true)
+	// 	switch cld := cld.(type) {
+	// 	case nil:
+	// 		// The trie doesn't contain the key.
+	// 		return nil, nil
+	// 	case hashNode:
+	// 		key = keyrest
+	// 		copy(wantHash[:], cld)
+	// 	case valueNode:
+	// 		return cld, nil
+	// 	}
+	// }
+	// --- End fork code comment ---
+
+	// --- Start fork code ---
+	proof, err := VerifyProofWithProof(rootHash, key, proofDb)
+	if err != nil {
+		return nil, err
+	}
+	return proof.Value(), nil
+	// --- End fork code ---
+}
+
+// --- Start fork code ---
+
+// Proof holds nodes and values for a merkle proof
+type Proof struct {
+	nodes []*ProofNode
+	value []byte
+}
+
+func (p *Proof) addNode(path []byte, node *trienode.Node) {
+	p.nodes = append(p.nodes, &ProofNode{Node: node, Path: path})
+}
+
+func (p *Proof) addValue(value []byte) {
+	p.value = value
+}
+
+func (p *Proof) Value() []byte {
+	return p.value
+}
+
+func (p *Proof) Nodes() []*ProofNode {
+	return p.nodes
+}
+
+type ProofNode struct {
+	Node *trienode.Node // trie node
+	Path []byte         // path to the node in the trie
+}
+
+// VerifyProofWithNodeSet verifies a proof against a root hash and a key.
+//
+// If the proof if valid it returns a nil error and
+// - value, the value associated with the key, it is non-nil if the key exists in the trie (inclusion proof) and nil otherwise (exclusion proof)
+// - set, the set of nodes that prove the inclusion or exclusion of the key.
+func VerifyProofWithProof(
+	root common.Hash,
+	key []byte,
+	proofDB ethdb.KeyValueReader,
+) (*Proof, error) {
+	proof := new(Proof)
+	if root == types.EmptyRootHash {
+		return proof, nil
+	}
+
+	resolveNode := func(hash common.Hash) (node, []byte, error) {
+		buf, _ := proofDB.Get(hash[:])
 		if buf == nil {
-			return nil, fmt.Errorf("proof node %d (hash %064x) missing", i, wantHash)
+			return nil, nil, fmt.Errorf("proof node (hash %064x) missing", hash)
 		}
-		n, err := decodeNode(wantHash[:], buf)
+
+		n, err := decodeNode(hash[:], buf)
 		if err != nil {
-			return nil, fmt.Errorf("bad proof node %d: %v", i, err)
+			return nil, nil, fmt.Errorf("bad proof node %v", err)
 		}
-		keyrest, cld := get(n, key, true)
-		switch cld := cld.(type) {
+
+		return n, buf, nil
+	}
+
+	var (
+		currentNode      node = hashNode(root[:])
+		currentNodeBytes []byte
+		currentKey       []byte
+		currentRestOfKey []byte = keybytesToHex(key)
+		err              error
+	)
+
+	for i := 0; ; i++ {
+		switch n := currentNode.(type) {
 		case nil:
-			// The trie doesn't contain the key.
-			return nil, nil
-		case hashNode:
-			key = keyrest
-			copy(wantHash[:], cld)
+			return proof, nil
 		case valueNode:
-			return cld, nil
+			proof.addValue(n)
+			return proof, nil
+		case hashNode:
+			hash := common.BytesToHash(n)
+			currentNode, currentNodeBytes, err = resolveNode(hash)
+			if err != nil {
+				return nil, err
+			}
+			proof.addNode(currentKey, trienode.New(hash, currentNodeBytes))
+		case *shortNode:
+			if !bytes.HasPrefix(currentRestOfKey, n.Key) {
+				return proof, nil
+			}
+			currentNode = n.Val
+			currentKey = append(currentKey, n.Key...)
+			currentRestOfKey = currentRestOfKey[len(n.Key):]
+		case *fullNode:
+			currentNode = n.Children[currentRestOfKey[0]]
+			currentKey = append(currentKey, currentRestOfKey[0])
+			currentRestOfKey = currentRestOfKey[1:]
 		}
 	}
 }
+
+// --- End fork code ---
 
 // proofToPath converts a merkle proof to trie node path. The main purpose of
 // this function is recovering a node path from the merkle proof stream. All
